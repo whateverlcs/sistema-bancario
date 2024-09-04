@@ -18,6 +18,14 @@ class PessoaFisica(Cliente):
         self.cpf = cpf
         self.nome = nome
         self.data_nascimento = data_nascimento
+    
+    def __str__(self):
+        return f"""\
+            Nome: {self.nome}
+            Data de Nascimento: {self.data_nascimento}
+            CPF: {self.cpf}
+            Endereço: {self.endereco}
+        """
 
 class Conta:
     def __init__(self, numero, cliente):
@@ -116,7 +124,7 @@ class Historico:
             {
                 "tipo": transacao.__class__.__name__,
                 "valor": transacao.valor,
-                "data": datetime.now().strftime("%d-%m-%Y %H:%M:%s"),
+                "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
             }
         )
 
@@ -158,40 +166,56 @@ class Saque(Transacao):
         if transacao_realizada:
             conta.historico.adicionar_transacao(self)
 
-def realizar_deposito(saldo, valor, extrato, /):
-    if valor > 0:
-        saldo += valor
-        extrato += f"Depósito realizado no valor de R$ {valor:.2f}\n"
-        print(f"\nO depósito de R$ {valor:.2f} foi realizado com sucesso!")
-    else:
-        print("\nNão é possível realizar um depósito zerado ou negativo!")
+def realizar_acao(usuarios_cadastrados, tipo):
+    cpf = str(input("Informe o CPF (Com ou sem pontuação): ")).replace(".", "").replace("-", "")
+    usuario = identificar_usuario(usuarios_cadastrados, cpf)
+
+    if not usuario:
+        print(f"\nO usuário com o CPF {cpf} não existe no sistema!")
+        return
     
-    return saldo, extrato
+    valor = float(input(f"Informe o valor do {("depósito" if tipo == "depósito" else "saque")}: "))
+    transacao = Deposito(valor) if tipo == "depósito" else Saque(valor)
 
-def realizar_saque(*, saldo, valor, extrato, limite, numero_saques, limite_saques):
-    if numero_saques >= limite_saques:
-        print("\nVocê atingiu o limite máximo de saques diários!")
+    conta = recuperar_conta_usuario(usuario)
 
-    elif valor > 0:
-        if valor <= limite:
-            if saldo >= valor:
-                saldo -= valor
-                extrato += f"Saque realizado no valor de R$ {valor:.2f}\n"
-                numero_saques += 1
-                print(f"\nO saque de R$ {valor:.2f} foi realizado com sucesso!")
-            else:
-                print(f"\nNão é possível realizar o saque no valor de R$ {valor:.2f}, pois o saldo é insuficiente!")
-        else:
-            print("\nNão é possível realizar um saque acima de R$ 500,00!")  
-    else:
-        print("\nNão é possível realizar um saque zerado ou negativo!")
+    if not conta:
+        return
     
-    return saldo, extrato, numero_saques
+    usuario.realizar_transacao(conta, transacao)
 
-def exibir_extrato(saldo, /, *, extrato):
+def recuperar_conta_usuario(usuario):
+    if not usuario.contas:
+        print("\n O Usuário não possui uma conta!")
+        return
+
+    return usuario.contas[0]
+
+def exibir_extrato(usuarios_cadastrados):
+    cpf = str(input("Informe o CPF (Com ou sem pontuação): ")).replace(".", "").replace("-", "")
+    usuario = identificar_usuario(usuarios_cadastrados, cpf)
+
+    if not usuario:
+        print(f"\nO usuário com o CPF {cpf} não existe no sistema!")
+        return
+    
+    conta = recuperar_conta_usuario(usuario)
+
+    if not conta:
+        return
+
     print("---------------EXTRATO---------------")
-    print("Não foram realizadas movimentações." if not extrato else extrato)
-    print(f"Saldo: R$ {saldo:.2f}")
+    transacoes = conta.historico.transacoes
+
+    extrato = ""
+    if not transacoes:
+        extrato = "Não foram realizadas movimentações."
+    else:
+        for transacao in transacoes:
+            extrato += f"\n{transacao['tipo']}: R$ {transacao['valor']:.2f}"
+
+    print(extrato)
+    print(f"\nSaldo: R$ {conta.saldo:.2f}")
     print("-------------------------------------")
 
 def criar_usuario(usuarios_cadastrados):
@@ -206,14 +230,17 @@ def criar_usuario(usuarios_cadastrados):
     data_nascimento = str(input("Informe a data de nascimento (dd-mm-aaaa): "))
     endereco = str(input("Informe o endereço (logradouro, nro - bairro - cidade/sigla estado): "))
 
-    usuarios_cadastrados.append({"nome": nome, "data_nascimento": data_nascimento, "cpf": cpf, "endereco": endereco})
+    usuario = PessoaFisica(nome=nome, data_nascimento=data_nascimento, cpf=cpf, endereco=endereco)
+
+    usuarios_cadastrados.append(usuario)
+
     print(f"\nO usuário {nome} foi criado com sucesso!")
 
 def identificar_usuario(usuarios_cadastrados, cpf):
-    usuarios_identificados = [usuario for usuario in usuarios_cadastrados if usuario["cpf"] == cpf]
+    usuarios_identificados = [usuario for usuario in usuarios_cadastrados if usuario.cpf == cpf]
     return usuarios_identificados[0] if usuarios_identificados else None
 
-def criar_conta_corrente(agencia, numero_conta, usuarios_cadastrados, contas_correntes_cadastradas):
+def criar_conta_corrente(numero_conta, usuarios_cadastrados, contas_correntes_cadastradas):
     cpf = str(input("Informe o CPF do usuário (Com ou sem pontuação): ")).replace(".", "").replace("-", "")
     usuario = identificar_usuario(usuarios_cadastrados, cpf)
 
@@ -221,30 +248,24 @@ def criar_conta_corrente(agencia, numero_conta, usuarios_cadastrados, contas_cor
         print(f"\nO usuário com o CPF {cpf} não existe no sistema!")
         return
     
-    contas_correntes_cadastradas.append({"agencia": agencia, "numero_conta": numero_conta, "usuario": usuario})
+    conta = ContaCorrente.nova_conta(cliente=usuario, numero=numero_conta)
+    contas_correntes_cadastradas.append(conta)
+    usuario.contas.append(conta)
+
     print(f"\nA conta corrente {numero_conta} foi criada e vinculada ao usuário de CPF {cpf} com sucesso!")
 
 def listar_usuarios(usuarios_cadastrados):
     print("---------------USUÁRIOS CADASTRADOS---------------")
     print("Não foram cadastrados novos usuários." if not usuarios_cadastrados else "")
     for usuario in usuarios_cadastrados:
-        print(f"""
-            Nome: {usuario['nome']}
-            Data de Nascimento: {usuario['data_nascimento']}
-            CPF: {usuario['cpf']}
-            Endereço: {usuario['endereco']}
-        """)
+        print(str(usuario))
     print("--------------------------------------------------")
 
 def listar_contas_correntes(contas_correntes_cadastradas):
     print("---------------CONTAS CORRENTES CADASTRADAS---------------")
     print("Não foram cadastrados novas contas correntes." if not contas_correntes_cadastradas else "")
     for conta in contas_correntes_cadastradas:
-        print(f"""
-            Agência: {conta['agencia']}
-            Número da conta: {conta['numero_conta']}
-            Usuário: {conta['usuario']['nome']}
-        """)
+        print(str(conta))
     print("----------------------------------------------------------")
 
 def menu():
@@ -261,13 +282,6 @@ def menu():
 => """
 
 def main():
-    saldo = 0
-    limite = 500
-    extrato = ""
-    numero_saques = 0
-    LIMITE_SAQUES = 3
-    numero_conta = 0
-    AGENCIA = "0001"
     usuarios_cadastrados = []
     contas_correntes_cadastradas = []
 
@@ -276,24 +290,20 @@ def main():
         opcao = input(menu())
 
         if opcao == "1":
-            valor = float(input("Informe o valor do depósito: "))
-
-            saldo, extrato = realizar_deposito(saldo, valor, extrato)
+            realizar_acao(usuarios_cadastrados, "depósito")
 
         elif opcao == "2":
-            valor = float(input("Informe o valor do saque: "))
-
-            saldo, extrato, numero_saques = realizar_saque(saldo=saldo, valor=valor, extrato=extrato, limite=limite, numero_saques=numero_saques, limite_saques=LIMITE_SAQUES)
+            realizar_acao(usuarios_cadastrados, "saque")
 
         elif opcao == "3":
-            exibir_extrato(saldo, extrato=extrato)
+            exibir_extrato(usuarios_cadastrados)
 
         elif opcao == "4": 
             criar_usuario(usuarios_cadastrados)
 
         elif opcao == "5":
             numero_conta = len(contas_correntes_cadastradas) + 1
-            criar_conta_corrente(AGENCIA, numero_conta, usuarios_cadastrados, contas_correntes_cadastradas)
+            criar_conta_corrente(numero_conta, usuarios_cadastrados, contas_correntes_cadastradas)
 
         elif opcao == "6":
             listar_usuarios(usuarios_cadastrados)
